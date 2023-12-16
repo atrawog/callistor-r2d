@@ -8,7 +8,7 @@
 	"workspaceFolder": "/workspace",
 
 	"build": {
-		"dockerfile": "../Dockerfile.dev",
+		"dockerfile": "../Dockerfile",
 		"context": "../",
 		"args": {
 			// "CONTAINER_WORKSPACE_FOLDER": "/workspace",
