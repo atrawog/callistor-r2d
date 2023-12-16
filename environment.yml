@@ -1,0 +1,12 @@
+name: base
+category: jupyterlab
+channels:
+  - conda-forge
+  - default
+dependencies:
+  - Python=3.11
+  - notebook
+  - jupyterlab
+  - jupyterhub
+  - jupyterhub-singleuser
+  - jupyter-repo2docker
