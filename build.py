@@ -1,40 +1,44 @@
 #!/usr/bin/env python3
-import subprocess
+import requests
 import datetime
 import re
+import subprocess
+
+# Define the base of the image tag (without the build number)
+current_year_month = datetime.datetime.now().strftime("%Y.%m.")
 
 def get_next_build_number():
-    # Define the base of the image tag (without the build number)
-    base_tag = datetime.datetime.now().strftime("atrawog/callisto-r2d:%Y.%m.")
+    base_tag = f"atrawog/callisto-r2d:{current_year_month}"
 
-    print(f"Pulling tags from the Docker registry for base tag: {base_tag}")
+    print("Fetching tags from Docker registry...")
 
-    # Pull tags from the Docker registry
-    result = subprocess.run(['docker', 'pull', '--all-tags', 'atrawog/callisto-r2d'], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError("Failed to pull tags from Docker registry")
+    # Fetch tags from the Docker registry
+    response = requests.get('https://registry.hub.docker.com/v2/repositories/atrawog/callisto-r2d/tags')
+    if response.status_code != 200:
+        raise RuntimeError("Failed to fetch tags from Docker registry")
 
-    # Initialize the highest build number found
-    highest_build_number = 0
+    tags = response.json().get('results', [])
+    build_numbers = []
 
     # Regex to find matching tags
-    tag_regex = re.compile(rf'^{re.escape(base_tag)}(\d{{2}})$')
+    tag_regex = re.compile(rf'^{re.escape(current_year_month)}(\d{{2}})$')
 
-    # Check each tag to find the highest build number
-    for line in result.stdout.strip().split('\n'):
-        match = tag_regex.search(line)
+    for tag in tags:
+        tag_name = tag.get('name')
+        match = tag_regex.match(tag_name)
         if match:
-            build_number = int(match.group(1))
-            if build_number > highest_build_number:
-                highest_build_number = build_number
+            build_number = int(match.group(1))  # Convert to integer to handle leading zeros
+            build_numbers.append(build_number)
 
-    # Return the next build number
-    return highest_build_number + 1
+    # Determine the next build number
+    next_build_number = max(build_numbers) + 1 if build_numbers else 1
+
+    return next_build_number
 
 def build_and_tag_docker_image(build_number):
-    # Define the image tag with month as two digits and build number as two digits
-    image_tag = datetime.datetime.now().strftime(f"atrawog/callisto-r2d:%Y.%m.{build_number:02d}")
+    image_tag = f"atrawog/callisto-r2d:{current_year_month}{build_number:02d}"
 
+    print(f"Next build number calculated: {build_number:02d}")
     print(f"Building Docker image with tag: {image_tag}")
 
     # Build the Docker image from Dockerfile.tpl and tag it
@@ -46,7 +50,6 @@ def build_and_tag_docker_image(build_number):
         file.write(f"FROM {image_tag}\n")
 
     print(f"Docker image built and tagged as {image_tag}")
-    print("New Dockerfile generated with the base image.")
 
 if __name__ == "__main__":
     build_number = get_next_build_number()

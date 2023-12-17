@@ -4,9 +4,6 @@ ARG BASE_IMAGE=debian:bookworm-slim
 FROM --platform=$BUILDPLATFORM $BASE_IMAGE AS fetch
 ARG VERSION=1.5.3
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN rm -f /etc/apt/apt.conf.d/docker-*
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && apt-get install -y --no-install-recommends bzip2 ca-certificates curl
 
 RUN if [ "$BUILDPLATFORM" = 'linux/arm64' ]; then \
@@ -22,42 +19,68 @@ FROM --platform=$BUILDPLATFORM $BASE_IMAGE as micromamba
 
 ARG MAMBA_ROOT_PREFIX="/opt/conda"
 ARG MAMBA_EXE="/bin/micromamba"
+ARG MAMBA_USER=jovian
+ARG MAMBA_UID=1000
+ARG MAMBA_GID=1000
+ARG CONTAINER_WORKSPACE_FOLDER=/workspace
+
+ENV MAMBA_USER=$MAMBA_USER
+ENV MAMBA_UID=$MAMBA_UID
+ENV MAMBA_GID=$MAMBA_GID
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV MAMBA_ROOT_PREFIX=$MAMBA_ROOT_PREFIX
 ENV MAMBA_EXE=$MAMBA_EXE
 ENV PATH="${PATH}:${MAMBA_ROOT_PREFIX}/bin"
 
+ENV DEBIAN_FRONTEND=noninteractive
+RUN rm -f /etc/apt/apt.conf.d/docker-*
+
 COPY --from=fetch /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=fetch /tmp/bin/micromamba "$MAMBA_EXE"
 
-ARG MAMBA_USER=jovian
-ARG MAMBA_USER_ID=1000
-ARG MAMBA_USER_GID=1000
-
-ENV MAMBA_USER=$MAMBA_USER
-ENV MAMBA_USER_ID=$MAMBA_USER_ID
-ENV MAMBA_USER_GID=$MAMBA_USER_GID
-
-RUN groupadd -g "${MAMBA_USER_GID}" "${MAMBA_USER}" && \
-    useradd -m -u "${MAMBA_USER_ID}" -g "${MAMBA_USER_GID}" -s /bin/bash "${MAMBA_USER}"
+RUN groupadd -g "${MAMBA_GID}" "${MAMBA_USER}" && \
+    useradd -m -u "${MAMBA_UID}" -g "${MAMBA_GID}" -s /bin/bash "${MAMBA_USER}"
 RUN mkdir -p "${MAMBA_ROOT_PREFIX}/environments" && \
-    chown "${MAMBA_USER}:${MAMBA_USER}" "${MAMBA_ROOT_PREFIX}"
+    chown -R "${MAMBA_USER}:${MAMBA_USER}" "${MAMBA_ROOT_PREFIX}"
 
-ARG CONTAINER_WORKSPACE_FOLDER=/workspace
-RUN mkdir -p "${CONTAINER_WORKSPACE_FOLDER}"
+RUN mkdir -p "${CONTAINER_WORKSPACE_FOLDER}"&& \
+    chown -R "${MAMBA_USER}:${MAMBA_USER}" "${CONTAINER_WORKSPACE_FOLDER}"
 WORKDIR "${CONTAINER_WORKSPACE_FOLDER}"
+
+# Environment variables required for build
+# ENV APP_BASE=/srv
+# ENV CONDA_DIR=${APP_BASE}/conda
+# ENV NB_PYTHON_PREFIX=${CONDA_DIR}/envs/notebook
+# ENV NPM_DIR=${APP_BASE}/npm
+# ENV NPM_CONFIG_GLOBALCONFIG=${NPM_DIR}/npmrc
+# ENV NB_ENVIRONMENT_FILE=/tmp/env/environment.lock
+# ENV MAMBA_ROOT_PREFIX=${CONDA_DIR}
+# ENV MAMBA_EXE=${CONDA_DIR}/bin/mamba
+# ENV CONDA_PLATFORM=linux-64
+# ENV KERNEL_PYTHON_PREFIX=${NB_PYTHON_PREFIX}
+# Special case PATH
+# ENV PATH=${NB_PYTHON_PREFIX}/bin:${CONDA_DIR}/bin:${NPM_DIR}/bin:${PATH}
+# If scripts required during build are present, copy them
+
+# COPY --chown=${NB_UID}:${NB_UID} activate-conda.sh /etc/profile.d/activate-conda.sh
+# COPY --chown=${NB_UID}:${NB_UID} environment.lock /tmp/env/environment.lock
+# RUN mkdir -p ${NPM_DIR} && \
+# chown -R ${NB_USER}:${NB_USER} ${NPM_DIR}
 
 USER $MAMBA_USER
 RUN micromamba shell init --shell bash --prefix=$MAMBA_ROOT_PREFIX
 SHELL ["/bin/bash", "--rcfile", "/$MAMBA_USER/.bashrc", "-c"]
-USER root
+
 
 FROM micromamba AS core
 
 # Set up user
 ARG NB_USER=$MAMBA_USER
-ARG NB_UID=$MAMBA_USER_ID
+ARG NB_UID=$MAMBA_UID
+
+USER root
+
 ENV USER=${NB_USER} \
     HOME=/home/${NB_USER}
 
@@ -66,7 +89,7 @@ RUN if ! getent group ${NB_UID} >/dev/null; then \
     fi && \
     if ! getent passwd ${NB_UID} >/dev/null; then \
         useradd \
-            --comment "Default user" \
+            --comment "Notebook user" \
             --create-home \
             --gid ${NB_UID} \
             --no-log-init \
@@ -76,27 +99,6 @@ RUN if ! getent group ${NB_UID} >/dev/null; then \
     fi
 
 
-# Environment variables required for build
-ENV APP_BASE=/srv
-# ENV CONDA_DIR=${APP_BASE}/conda
-ENV NB_PYTHON_PREFIX=${CONDA_DIR}/envs/notebook
-ENV NPM_DIR=${APP_BASE}/npm
-ENV NPM_CONFIG_GLOBALCONFIG=${NPM_DIR}/npmrc
-# ENV NB_ENVIRONMENT_FILE=/tmp/env/environment.lock
-# ENV MAMBA_ROOT_PREFIX=${CONDA_DIR}
-# ENV MAMBA_EXE=${CONDA_DIR}/bin/mamba
-# ENV CONDA_PLATFORM=linux-64
-ENV KERNEL_PYTHON_PREFIX=${NB_PYTHON_PREFIX}
-# Special case PATH
-# ENV PATH=${NB_PYTHON_PREFIX}/bin:${CONDA_DIR}/bin:${NPM_DIR}/bin:${PATH}
-# If scripts required during build are present, copy them
-
-# COPY --chown=${NB_UID}:${NB_UID} activate-conda.sh /etc/profile.d/activate-conda.sh
-# COPY --chown=${NB_UID}:${NB_UID} environment.lock /tmp/env/environment.lock
-
-
-RUN mkdir -p ${NPM_DIR} && \
-chown -R ${NB_USER}:${NB_USER} ${NPM_DIR}
 
 # ensure root user after build scripts
 USER root
@@ -190,8 +192,8 @@ RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 COPY fix-permissions.sh /bin/fix-permissions.sh
 RUN chmod +x /bin/fix-permissions.sh && \
-    echo 'export MAMBA_USER_ID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
-    echo 'export MAMBA_USER_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
+    echo 'export MAMBA_UID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
+    echo 'export MAMBA_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
     echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
     echo "micromamba activate" >> /home/$MAMBA_USER/.bashrc
 
