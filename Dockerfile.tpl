@@ -198,6 +198,8 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y doc
 RUN usermod -aG sudo $MAMBA_USER
 RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+USER $NB_USER
+
 
 
 
