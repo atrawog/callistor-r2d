@@ -30,14 +30,14 @@ def get_latest_image_tag():
     latest_image_tag = sorted(image_tags, key=lambda x: (x[0], int(x[1].split('.')[-1])), reverse=True)[0][1]
     return latest_image_tag
 
-def push_docker_image_to_hub(image_tag):
-    push_command = f"docker push {image_tag}"
-    subprocess.run(push_command, shell=True, check=True)
-    print(f"Docker image {image_tag} pushed to Docker Hub.")
+def run_latest_image(image_tag):
+    run_command = f"docker run -p 8888:8888 {image_tag}"
+    subprocess.run(run_command, shell=True, check=True)
+    print(f"Running Docker image: {image_tag}")
 
 if __name__ == "__main__":
     image_tag = get_latest_image_tag()
     if image_tag:
-        push_docker_image_to_hub(image_tag)
+        run_latest_image(image_tag)
     else:
         print("No Docker images found.")
