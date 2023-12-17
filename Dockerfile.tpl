@@ -173,7 +173,7 @@ SHELL ["/bin/bash", "--rcfile", "/$NB_USER/.bashrc", "-c"]
 
 # Specify the default command to run
 
-CMD ["jupyter","lab", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
+CMD ["jupyter","notebook", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
 
 # FROM core as core-devel
 
