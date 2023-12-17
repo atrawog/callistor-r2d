@@ -4,17 +4,19 @@ import re
 import datetime
 
 def get_latest_image_tag():
-    # Get the list of Docker images sorted by creation time
+    # Define the base pattern for the image tag
+    base_tag_pattern = r"atrawog/callisto-r2d:\d{4}\.\d{2}\."
+
+    # Get the list of Docker images
     result = subprocess.run(['docker', 'images', '--format', '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}', '--no-trunc'], capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError("Failed to get Docker images list")
 
     # Extract image creation time and tag
-    lines = result.stdout.strip().split('\n')
     latest_image = None
     latest_time = None
-    for line in lines:
-        match = re.match(r"(.+)\t(.+)", line)
+    for line in result.stdout.strip().split('\n'):
+        match = re.match(r"(.+)\t(" + base_tag_pattern + r"\d{4})", line)
         if match:
             image_time, image_tag = match.groups()
             try:

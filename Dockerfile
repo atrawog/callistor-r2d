@@ -1,1 +1,1 @@
-FROM atrawog/callisto-r2d:202312170001
+FROM atrawog/callisto-r2d:2023.12.0002
