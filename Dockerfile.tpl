@@ -53,6 +53,8 @@ RUN micromamba shell init --shell bash --prefix=$MAMBA_ROOT_PREFIX
 SHELL ["/bin/bash", "--rcfile", "/$MAMBA_USER/.bashrc", "-c"]
 USER root
 
+FROM micromamba AS core
+
 # Set up user
 ARG NB_USER=$MAMBA_USER
 ARG NB_UID=$MAMBA_USER_ID
@@ -161,4 +163,36 @@ USER ${NB_USER}
 # ENTRYPOINT ["/usr/local/bin/repo2docker-entrypoint"]
 
 # Specify the default command to run
-CMD ["jupyter", "notebook", "--ip", "0.0.0.0"]
+CMD ["jupyter", "notebook", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
+
+FROM core as core-devel
+
+USER root
+COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y < /opt/conda/environments/apt-devel.txt
+
+
+COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
+RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
+
+
+RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    chmod a+r /etc/apt/keyrings/docker.gpg
+RUN echo \
+    "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+    "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+RUN usermod -aG sudo $MAMBA_USER
+RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+COPY fix-permissions.sh /bin/fix-permissions.sh
+RUN chmod +x /bin/fix-permissions.sh && \
+    echo 'export MAMBA_USER_ID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
+    echo 'export MAMBA_USER_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
+    echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
+    echo "micromamba activate" >> /home/$MAMBA_USER/.bashrc
+
+USER $NB_USER
