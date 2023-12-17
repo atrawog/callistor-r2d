@@ -6,6 +6,7 @@
 	},
 	"workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
 	"workspaceFolder": "/workspace",
+	"updateRemoteUserUID": true,
 
 	"build": {
 		"dockerfile": "../Dockerfile.devc",

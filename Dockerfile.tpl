@@ -44,8 +44,11 @@ RUN groupadd -g "${MAMBA_GID}" "${MAMBA_USER}" && \
 RUN mkdir -p "${MAMBA_ROOT_PREFIX}/environments" && \
     chown -R "${MAMBA_USER}:${MAMBA_USER}" "${MAMBA_ROOT_PREFIX}"
 
-RUN mkdir -p "${CONTAINER_WORKSPACE_FOLDER}"&& \
-    chown -R "${MAMBA_USER}:${MAMBA_USER}" "${CONTAINER_WORKSPACE_FOLDER}"
+RUN mkdir -p ${CONTAINER_WORKSPACE_FOLDER} && \
+    chown -R "${MAMBA_USER}:${MAMBA_USER}" ${CONTAINER_WORKSPACE_FOLDER}
+
+RUN ln -s ${CONTAINER_WORKSPACE_FOLDER} /home/${MAMBA_USER}${CONTAINER_WORKSPACE_FOLDER}
+
 WORKDIR "${CONTAINER_WORKSPACE_FOLDER}"
 
 # Environment variables required for build
@@ -75,6 +78,42 @@ SHELL ["/bin/bash", "--rcfile", "/$MAMBA_USER/.bashrc", "-c"]
 
 FROM micromamba AS core
 
+
+# ensure root user after build scripts
+# USER root
+
+# Allow target path repo is cloned to be configurable
+# ARG REPO_DIR=${HOME}
+# ENV REPO_DIR=${REPO_DIR}
+# Create a folder and grant the user permissions if it doesn't exist
+# RUN if [ ! -d "${REPO_DIR}" ]; then \
+#         /usr/bin/install -o ${NB_USER} -g ${NB_USER} -d "${REPO_DIR}"; \
+#     fi
+
+# WORKDIR ${REPO_DIR}
+# RUN chown ${NB_USER}:${NB_USER} ${REPO_DIR}
+
+# We want to allow two things:
+#   1. If there's a .local/bin directory in the repo, things there
+#      should automatically be in path
+#   2. postBuild and users should be able to install things into ~/.local/bin
+#      and have them be automatically in path
+#
+# The XDG standard suggests ~/.local/bin as the path for local user-specific
+# installs. See https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
+# ENV PATH=${HOME}/.local/bin:${REPO_DIR}/.local/bin:${PATH}
+
+# The rest of the environment
+# ENV CONDA_DEFAULT_ENV=${KERNEL_PYTHON_PREFIX}
+# Run pre-assemble scripts! These are instructions that depend on the content
+# of the repository but don't access any files in the repository. By executing
+# them before copying the repository itself we can cache these steps. For
+# example installing APT packages.
+# If scripts required during build are present, copy them
+
+COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /opt/conda/environments/environment.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment.yml
+
 # Set up user
 ARG NB_USER=$MAMBA_USER
 ARG NB_UID=$MAMBA_UID
@@ -98,46 +137,13 @@ RUN if ! getent group ${NB_UID} >/dev/null; then \
             ${NB_USER}; \
     fi
 
-
-
-# ensure root user after build scripts
-USER root
-
-# Allow target path repo is cloned to be configurable
-ARG REPO_DIR=${HOME}
-ENV REPO_DIR=${REPO_DIR}
-# Create a folder and grant the user permissions if it doesn't exist
-RUN if [ ! -d "${REPO_DIR}" ]; then \
-        /usr/bin/install -o ${NB_USER} -g ${NB_USER} -d "${REPO_DIR}"; \
-    fi
-
-WORKDIR ${REPO_DIR}
-RUN chown ${NB_USER}:${NB_USER} ${REPO_DIR}
-
-# We want to allow two things:
-#   1. If there's a .local/bin directory in the repo, things there
-#      should automatically be in path
-#   2. postBuild and users should be able to install things into ~/.local/bin
-#      and have them be automatically in path
-#
-# The XDG standard suggests ~/.local/bin as the path for local user-specific
-# installs. See https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
-# ENV PATH=${HOME}/.local/bin:${REPO_DIR}/.local/bin:${PATH}
-
-# The rest of the environment
-ENV CONDA_DEFAULT_ENV=${KERNEL_PYTHON_PREFIX}
-# Run pre-assemble scripts! These are instructions that depend on the content
-# of the repository but don't access any files in the repository. By executing
-# them before copying the repository itself we can cache these steps. For
-# example installing APT packages.
-# If scripts required during build are present, copy them
-
-COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /opt/conda/environments/environment.yml
-RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment.yml
-
+USER $NB_USER
+RUN micromamba shell init --shell bash --prefix=$MAMBA_ROOT_PREFIX && \
+    echo "micromamba activate" >> /home/$NB_USER/.bashrc
+SHELL ["/bin/bash", "--rcfile", "/$NB_USER/.bashrc", "-c"]
 
 # ensure root user after preassemble scripts
-USER root
+# USER root
 
 # Copy stuff.
 # COPY --chown=${NB_UID}:${NB_UID} src/ ${REPO_DIR}/
@@ -155,7 +161,7 @@ USER root
 # LABEL repo2docker.version="2023.06.0"
 
 # We always want containers to run as non-root
-USER ${NB_USER}
+# USER ${NB_USER}
 
 # Add start script
 # Add entrypoint
@@ -164,37 +170,34 @@ USER ${NB_USER}
 # COPY repo2docker-entrypoint /usr/local/bin/repo2docker-entrypoint
 # ENTRYPOINT ["/usr/local/bin/repo2docker-entrypoint"]
 
+
 # Specify the default command to run
-CMD ["jupyter", "notebook", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
 
-FROM core as core-devel
+CMD ["jupyter-lab", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
 
-USER root
-COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
-RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y < /opt/conda/environments/apt-devel.txt
+# FROM core as core-devel
 
-
-COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
-RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
+# USER root
+# COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
+# RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y < /opt/conda/environments/apt-devel.txt
 
 
-RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings
-RUN curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    chmod a+r /etc/apt/keyrings/docker.gpg
-RUN echo \
-    "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-    "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
-RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
+# RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
 
-RUN usermod -aG sudo $MAMBA_USER
-RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-COPY fix-permissions.sh /bin/fix-permissions.sh
-RUN chmod +x /bin/fix-permissions.sh && \
-    echo 'export MAMBA_UID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
-    echo 'export MAMBA_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
-    echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
-    echo "micromamba activate" >> /home/$MAMBA_USER/.bashrc
+# RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings
+# RUN curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+#     chmod a+r /etc/apt/keyrings/docker.gpg
+# RUN echo \
+#     "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+#     "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+#     sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
+# RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-USER $NB_USER
+# RUN usermod -aG sudo $MAMBA_USER
+# RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+
+
+
