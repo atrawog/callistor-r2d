@@ -27,6 +27,7 @@ ARG CONTAINER_WORKSPACE_FOLDER=/workspace
 ENV MAMBA_USER=$MAMBA_USER
 ENV MAMBA_UID=$MAMBA_UID
 ENV MAMBA_GID=$MAMBA_GID
+ENV CONTAINER_WORKSPACE_FOLDER=${CONTAINER_WORKSPACE_FOLDER}
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV MAMBA_ROOT_PREFIX=$MAMBA_ROOT_PREFIX
@@ -137,10 +138,14 @@ RUN if ! getent group ${NB_UID} >/dev/null; then \
             ${NB_USER}; \
     fi
 
+COPY fix-permissions.sh /bin/fix-permissions.sh
+RUN chmod +x /bin/fix-permissions.sh
+
 USER $NB_USER
-RUN micromamba shell init --shell bash --prefix=$MAMBA_ROOT_PREFIX && \
-    echo "micromamba activate" >> /home/$NB_USER/.bashrc
-SHELL ["/bin/bash", "--rcfile", "/$NB_USER/.bashrc", "-c"]
+RUN echo 'export MAMBA_USER_ID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
+    echo 'export MAMBA_USER_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
+    echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
+    echo "micromamba activate" >> /home/$MAMBA_USER/.bashrc
 
 # ensure root user after preassemble scripts
 # USER root
@@ -183,7 +188,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xarg
 
 
 COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
-RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
 
 
 RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings

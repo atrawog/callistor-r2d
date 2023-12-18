@@ -1,44 +1,42 @@
 #!/bin/bash
 
-has_sudo() {
-    if sudo -l &>/dev/null; then
-        return 0
-    else
-        return 1
-    fi
-}
+# Check if the user can execute commands with sudo
+if sudo -l &>/dev/null; then
+    echo "User has sudo privileges. Proceeding with file checks."
 
-fix_permissions() {
-    local target_directory=$1
-    local target_uid=$2
-    local target_gid=$3
+    # Get the current user's UID and GID
+    USER_UID=$(id -u)
+    USER_GID=$(id -g)
 
-    if [[ -z "$target_directory" ]]; then
-        echo "The target directory variable is not set. Skipping permissions change."
-        return
-    fi
+    # Define the environment variables to check
+    env_vars=("KVM_DEVICE" "DOCKER_SOCKET" "MAMBA_ROOT_PREFIX" "CONTAINER_WORKSPACE_FOLDER")
 
-    if [ -e "$target_directory" ]; then
-        local directory_uid=$(stat -c '%u' "$target_directory")
-        local directory_gid=$(stat -c '%g' "$target_directory")
+    # Loop over the environment variables
+    for env_var in "${env_vars[@]}"; do
+        # Check if the environment variable is set
+        if [ -n "${!env_var}" ]; then
+            echo "Checking files in ${!env_var}"
 
-        if [ "$target_uid" != "$directory_uid" ] || [ "$target_gid" != "$directory_gid" ]; then
-            sudo chown -R $target_uid:$target_gid "$target_directory"
+            # Loop through each file in the specified directory
+            for file in ${!env_var}/*; do
+                if [ -f "$file" ]; then
+                    # Get file's UID and GID
+                    FILE_UID=$(stat -c '%u' "$file")
+                    FILE_GID=$(stat -c '%g' "$file")
+
+                    # Compare file's UID and GID with the user's UID and GID
+                    if [ "$FILE_UID" -ne "$USER_UID" ] || [ "$FILE_GID" -ne "$USER_GID" ]; then
+                        echo "Changing ownership for $file"
+                        sudo chown "$USER_UID":"$USER_GID" "$file" # Change file ownership to the current user
+                    else
+                        echo "Ownership for $file is already correct."
+                    fi
+                fi
+            done
+        else
+            echo "Environment variable $env_var is not set. Skipping."
         fi
-    else
-        echo "Directory $target_directory does not exist."
-    fi
-}
-
-if has_sudo; then
-    # Fix permissions for MAMBA_ROOT_PREFIX
-    fix_permissions "$MAMBA_ROOT_PREFIX" "$MAMBA_USER_ID" "$MAMBA_USER_GID"
-
-    # Fix permissions for KVM_DEVICE
-    fix_permissions "$KVM_DEVICE" "$MAMBA_USER_ID" "$MAMBA_USER_GID"
-
-    # Fix permissions for DOCKER_SOCKET
-    fix_permissions "$DOCKER_SOCKET" "$MAMBA_USER_ID" "$MAMBA_USER_GID"
+    done
 else
-    echo "User does not have sudo permissions. Can't set permissions."
+    echo "User does not have sudo privileges. Exiting script."
 fi
