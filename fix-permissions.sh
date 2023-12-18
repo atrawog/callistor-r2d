@@ -2,39 +2,39 @@
 
 # Check if the user can execute commands with sudo
 if sudo -l &>/dev/null; then
-    echo "User has sudo privileges. Proceeding with file checks."
+    echo "User has sudo privileges. Proceeding with file and directory checks."
 
     # Get the current user's UID and GID
     USER_UID=$(id -u)
     USER_GID=$(id -g)
 
     # Define the environment variables to check
-    env_vars=("KVM_DEVICE" "DOCKER_SOCKET" "MAMBA_ROOT_PREFIX" "CONTAINER_WORKSPACE_FOLDER")
+    env_vars=("KVM_DEVICE" "DOCKER_SOCKET" "CONTAINER_WORKSPACE_FOLDER")
 
     # Loop over the environment variables
     for env_var in "${env_vars[@]}"; do
-        # Check if the environment variable is set
-        if [ -n "${!env_var}" ]; then
-            echo "Checking files in ${!env_var}"
+        # Check if the environment variable is set and points to a directory
+        if [ -n "${!env_var}" ] && [ -d "${!env_var}" ]; then
+            echo "Recursively checking directory and files in ${!env_var}"
 
-            # Loop through each file in the specified directory
-            for file in ${!env_var}/*; do
-                if [ -f "$file" ]; then
-                    # Get file's UID and GID
-                    FILE_UID=$(stat -c '%u' "$file")
-                    FILE_GID=$(stat -c '%g' "$file")
+            # Recursively loop through each file and directory within the specified path
+            find "${!env_var}" -exec bash -c '
+                for path; do
+                    # Check if the path is a file or directory and update its ownership if needed
+                    if [ -e "$path" ]; then
+                        OWNER_UID=$(stat -c "%u" "$path")
+                        OWNER_GID=$(stat -c "%g" "$path")
 
-                    # Compare file's UID and GID with the user's UID and GID
-                    if [ "$FILE_UID" -ne "$USER_UID" ] || [ "$FILE_GID" -ne "$USER_GID" ]; then
-                        echo "Changing ownership for $file"
-                        sudo chown "$USER_UID":"$USER_GID" "$file" # Change file ownership to the current user
-                    else
-                        echo "Ownership for $file is already correct."
+                        if [ "$OWNER_UID" -ne '"$USER_UID"' ] || [ "$OWNER_GID" -ne '"$USER_GID"' ]; then
+                            echo "Changing ownership of $path"
+                            sudo chown '"$USER_UID:$USER_GID"' "$path"
+                        fi
                     fi
-                fi
-            done
+                done
+            ' bash {} +
+
         else
-            echo "Environment variable $env_var is not set. Skipping."
+            echo "Environment variable $env_var is not set or does not point to a valid directory. Skipping."
         fi
     done
 else

@@ -138,13 +138,13 @@ RUN if ! getent group ${NB_UID} >/dev/null; then \
             ${NB_USER}; \
     fi
 
-COPY fix-permissions.sh /bin/fix-permissions.sh
-RUN chmod +x /bin/fix-permissions.sh
+# COPY fix-permissions.sh /bin/fix-permissions.sh
+# RUN chmod +x /bin/fix-permissions.sh
 
 USER $NB_USER
 RUN echo 'export MAMBA_USER_ID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
     echo 'export MAMBA_USER_GID=$(id -g)' >> /home/$MAMBA_USER/.bashrc && \
-    echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
+#    echo "/bin/fix-permissions.sh" >> /home/$MAMBA_USER/.bashrc && \
     echo "micromamba activate" >> /home/$MAMBA_USER/.bashrc
 
 # ensure root user after preassemble scripts
@@ -180,7 +180,7 @@ RUN echo 'export MAMBA_USER_ID=$(id -u)' >> /home/$MAMBA_USER/.bashrc && \
 
 CMD ["jupyter","lab", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
 
-FROM core as core-devel
+# FROM core as core-devel
 
 USER root
 COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
@@ -200,6 +200,7 @@ RUN echo \
     sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+# RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y sudo
 RUN usermod -aG sudo $MAMBA_USER
 RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 

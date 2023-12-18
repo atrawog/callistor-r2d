@@ -9,7 +9,7 @@
 	"updateRemoteUserUID": true,
 
 	"build": {
-		"dockerfile": "../Dockerfile.devc",
+		"dockerfile": "../Dockerfile.tpl",
 		"context": "../",
 		"args": {
 			// "CONTAINER_WORKSPACE_FOLDER": "/workspace",
