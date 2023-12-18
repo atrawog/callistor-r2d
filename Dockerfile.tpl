@@ -175,30 +175,30 @@ SHELL ["/bin/bash", "--rcfile", "/$NB_USER/.bashrc", "-c"]
 
 CMD ["jupyter","lab", "--ip", "0.0.0.0","--port", "8888", "--no-browser", "--allow-root"]
 
-# FROM core as core-devel
+FROM core as core-devel
 
-# USER root
-# COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
-# RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y < /opt/conda/environments/apt-devel.txt
-
-
-# COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
-# RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
+USER root
+COPY --chown=$MAMBA_USER:$MAMBA_USER apt-devel.txt /opt/conda/environments/apt-devel.txt
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get update && xargs apt-get install -y < /opt/conda/environments/apt-devel.txt
 
 
-# RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings
-# RUN curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-#     chmod a+r /etc/apt/keyrings/docker.gpg
-# RUN echo \
-#     "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
-#     "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-#     sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
-# RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+COPY --chown=$MAMBA_USER:$MAMBA_USER environment-devel.yml /opt/conda/environments/environment-devel.yml
+RUN --mount=type=cache,target=$MAMBA_ROOT_PREFIX/pkgs,id=mamba-pkgs micromamba install -y -f /opt/conda/environments/environment-devel.yml
 
-# RUN usermod -aG sudo $MAMBA_USER
-# RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# USER $NB_USER
+RUN touch /var/lib/dpkg/status && install -m 0755 -d /etc/apt/keyrings
+RUN curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    chmod a+r /etc/apt/keyrings/docker.gpg
+RUN echo \
+    "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+    "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && apt-get update
+RUN --mount=type=cache,target=/var/cache/apt,id=apt-deb12 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+RUN usermod -aG sudo $MAMBA_USER
+RUN echo "$MAMBA_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+USER $NB_USER
 
 
 
